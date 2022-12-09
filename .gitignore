@@ -3,3 +3,7 @@ creds.ini
 .idea/
 __pycache__/
 *.pyc
+
+.venv
+application-log.log
+result.csv
