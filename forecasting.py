@@ -1,6 +1,6 @@
 import multiprocessing
 
-from tasks import DataAnalyzingTask, DataCalculationTask, DataAggregationTask
+from tasks import DataAggregationTask, DataAnalyzingTask, DataCalculationTask
 
 
 def forecast_weather():

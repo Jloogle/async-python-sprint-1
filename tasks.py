@@ -1,15 +1,14 @@
+import logging
 from concurrent.futures import ThreadPoolExecutor
-from statistics import mean
 from multiprocessing import Process
-
+from statistics import mean
 from typing import List
+
 import pandas as pd
-import csv
 
 from api_client import YandexWeatherAPI
-from utils import GOOD_WEATHER, MAX_HOUR, MIN_HOUR, CITIES
-from base_models import ForecastModel, DetailWeather
-import logging
+from base_models import DetailWeather, ForecastModel
+from utils import CITIES, GOOD_WEATHER, MAX_HOUR, MIN_HOUR
 
 logger = logging.getLogger()
 
