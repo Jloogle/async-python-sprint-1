@@ -1,9 +1,7 @@
-from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Queue
 
 from tasks import (DataAggregationTask, DataAnalyzingTask,
                    DataCalculationTask, DataFetchingTask)
-from utils import CITIES
 
 
 def forecast_weather():
@@ -20,6 +18,10 @@ def forecast_weather():
     a = DataAggregationTask(queue)
     result = a.run()
     DataAnalyzingTask(result).run()
+    # Николай, добрый вечер, не могу найти вас в пачке.
+    # Хотел спросить, а то запутался окончательно, правильно ли так? Если нет,
+    # то не могли бы вы скинуть ссылку на документацию, где может описано
+    # подробнее чем в теории?
 
 
 if __name__ == "__main__":
