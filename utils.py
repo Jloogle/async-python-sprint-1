@@ -1,3 +1,6 @@
+import logging
+
+
 CITIES = {
     "MOSCOW": "https://code.s3.yandex.net/async-module/moscow-response.json",
     "PARIS": "https://code.s3.yandex.net/async-module/paris-response.json",
@@ -24,6 +27,20 @@ GOOD_WEATHER = ['clear', 'partly-cloudy', 'cloudy']
 
 MIN_HOUR = 9
 MAX_HOUR = 19
+COUNT_HOURS = MAX_HOUR - MIN_HOUR + 1
+AVG_TEMP = 'Температура, среднее'
+CONDITION = 'Без осадков, часов'
+AVG_STR = 'Среднее'
+
+
+logging.basicConfig(
+    filename='application-log.log',
+    filemode='w',
+    format='%(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+logger = logging.getLogger()
 
 
 def check_python_version():
