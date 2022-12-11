@@ -2,43 +2,49 @@ import csv
 from collections import defaultdict
 from multiprocessing import Process, Queue
 from statistics import mean
-from threading import Thread
 from typing import List
+from concurrent.futures import ThreadPoolExecutor
 
 from api_client import YandexWeatherAPI
 from base_models import CityData, DetailWeather, ForecastModel
 from utils import (AVG_STR, AVG_TEMP, CONDITION, COUNT_HOURS, GOOD_WEATHER,
-                   MAX_HOUR, MIN_HOUR, logger)
+                   MAX_HOUR, MIN_HOUR, logger, CITIES)
 
 
 class DataFetchingTask:
     """Получение данных через API"""
-    def __init__(self, city_name):
-        self.city_name = city_name
+    def __init__(self):
         self.api = YandexWeatherAPI()
 
-    def run(self):
+    def fetch(self, city):
         try:
-            response = self.api.get_forecasting(self.city_name)
+            response = self.api.get_forecasting(city)
             parsed = ForecastModel.parse_obj(response)
             logger.info(
-                msg=f'Данные о городе {self.city_name}, получены успешно'
+                msg=f'Данные о городе {city}, получены успешно'
             )
             return parsed
         except Exception as e:
             logger.exception(
-                msg=f'Получение данных о городе {self.city_name},'
+                msg=f'Получение данных о городе {city},'
                     f' произошло с ошибкой {e}, операция остановлена.'
             )
             raise e
 
+    def run(self):
+        with ThreadPoolExecutor() as executor:
+            futures = []
+            for city in CITIES.keys():
+                futures.append(executor.submit(self.fetch, city=city))
+            return futures
+
 
 class DataCalculationTask(Process):
     """Обработка данных полученных от API"""
-    def __init__(self, response: ForecastModel, queue: Queue):
+    def __init__(self, queue: Queue, future_res: List[ForecastModel]):
         super().__init__()
         self.queue = queue
-        self.response = response
+        self.future_res = future_res
 
     @staticmethod
     def check_condition(condition):
@@ -61,38 +67,38 @@ class DataCalculationTask(Process):
         }
 
     def run(self):
-        data_city = self.response.forecasts
-        for date_info in data_city:
-            try:
-                day_result = self._calc_temp_and_condition(date_info.hours)
-                data = CityData(
-                    city=self.response.geo_object.province.name,
-                    date=date_info.date,
-                    avg_temp=day_result['avg_temp'],
-                    condition_hours=day_result['good_hours']
-                )
-                self.queue.put(data)
-            except (ZeroDivisionError, ValueError):
-                logger.error(
-                    msg=f'Недостаточно данных по городу '
-                        f'"{self.response.geo_object.province.name}" '
-                        f'на дату "{date_info.date}". Дата исключена')
-                continue
-        logger.info(
-            msg='Подсчет данных для города: '
-                f'{self.response.geo_object.province.name}, завершен'
-        )
+        for date in self.future_res:
+            for date_info in date.forecasts:
+                try:
+                    day_result = self._calc_temp_and_condition(
+                        date_info.hours
+                    )
+                    data = CityData(
+                        city=date.geo_object.province.name,
+                        date=date_info.date,
+                        avg_temp=day_result['avg_temp'],
+                        condition_hours=day_result['good_hours']
+                    )
+                    self.queue.put(data)
+                except (ZeroDivisionError, ValueError):
+                    logger.error(
+                        msg=f'Недостаточно данных по городу '
+                            f'"{date.geo_object.province.name}" '
+                            f'на дату "{date_info.date}". Дата исключена')
+                    continue
+            logger.info(
+                msg='Подсчет данных для города: '
+                    f'{date.geo_object.province.name}, завершен'
+            )
 
 
-class DataAggregationTask(Process):
+class DataAggregationTask:
     """Группировка подсчитанных данных о городах"""
     def __init__(self, queue):
-        super().__init__()
         self.queue = queue
 
     def group_by_city(self):
         group_data = dict()
-
         while not self.queue.empty():
             item = self.queue.get()
             if item.city not in group_data:
@@ -130,25 +136,15 @@ class DataAggregationTask(Process):
             rating[points].append(city)
         return group_data, rating
 
-    def run(self):
-        return self.count_avg_and_rating(self.group_by_city())
-
-
-class DataAnalyzingTask(Thread):
-    """Анализ сгруппированных данных"""
-    def __init__(self, data, rating):
-        super().__init__()
-        self.data = data
-        self.rating = rating
-
-    def group_table_ordered_by_points(self) -> list[dict]:
+    def group_table_ordered_by_points(self, group_data, rating) -> list[dict]:
         result = list()
         index = 1
-        for points in sorted(self.rating, reverse=True):
-            for city in self.rating[points]:
+
+        for points in sorted(rating, reverse=True):
+            for city in rating[points]:
                 avg = dict()
                 good_hours = dict()
-                for k, v in self.data[city].items():
+                for k, v in group_data[city].items():
                     avg[k] = round(v[AVG_TEMP], 1)
                     good_hours[k] = round(v[CONDITION], 1)
                 result.append(
@@ -167,24 +163,42 @@ class DataAnalyzingTask(Thread):
                         'Рейтинг': None,
                     }
                 )
-                if index == 1:
-                    if len(self.rating[points]) == 1:
-                        msg = ('Рекомендовано отправиться в город, как: '
-                               f'{self.rating[points][0]}')
-                        print(msg)
-                        logger.info(msg=msg)
-                    else:
-                        msg = ('Рекомендовано отправиться в такие города,'
-                               f' как:{", ".join(self.rating[points])}')
-                        print(msg)
-                        logger.info(msg=msg)
             index += 1
         return result
 
     def run(self):
-        data = self.group_table_ordered_by_points()
+        data, rating = self.count_avg_and_rating(self.group_by_city())
+        return self.group_table_ordered_by_points(
+            data, rating
+        )
+
+
+class DataAnalyzingTask:
+    """Анализ сгруппированных данных"""
+    def __init__(self, data):
+        self.data = data
+
+    def run(self):
+        count = 0
+        city_rating = []
+        data = self.data
         with open('result.csv', 'w') as f:
             writer = csv.DictWriter(f, fieldnames=list(data[0].keys()))
             writer.writeheader()
             writer.writerows(data)
+        for city in data:
+            if city['Рейтинг'] == 1:
+                city_rating.append(city['Город/день'])
+                count += 1
+        if count == 1:
+            msg = ('Рекомендовано отправиться в город, как: '
+                   f'{city_rating[0]}')
+            print(msg)
+            logger.info(msg=msg)
+        else:
+            msg = ('Рекомендовано отправиться в такие города,'
+                   f' как:{", ".join(city_rating)}')
+            print(msg)
+            logger.info(msg=msg)
+
         logger.info('Анализ данных прошел успешно')

@@ -11,14 +11,15 @@ def forecast_weather():
     Анализ погодных условий по городам
     """
     queue = Queue()
-    with ThreadPoolExecutor() as pool:
-        future = pool.map(DataFetchingTask, CITIES)
-
-    for i in future:
-        DataCalculationTask(i.run(), queue).run()
-    data, rating = DataAggregationTask(queue).run()
-    analyzer = DataAnalyzingTask(data, rating)
-    analyzer.run()
+    q = DataFetchingTask()
+    future = q.run()
+    future_res = [f.result() for f in future]
+    process_producer = DataCalculationTask(queue, future_res)
+    process_producer.start()
+    process_producer.join()
+    a = DataAggregationTask(queue)
+    result = a.run()
+    DataAnalyzingTask(result).run()
 
 
 if __name__ == "__main__":
