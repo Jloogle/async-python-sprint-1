@@ -14,5 +14,22 @@ class Weather(BaseModel):
     hours: List[DetailWeather]
 
 
+class Province(BaseModel):
+    id: int
+    name: str
+
+
+class GeoObject(BaseModel):
+    province: Province
+
+
 class ForecastModel(BaseModel):
+    geo_object: GeoObject
     forecasts: List[Weather]
+
+
+class CityData(BaseModel):
+    city: str
+    date: str
+    avg_temp: float
+    condition_hours: int
