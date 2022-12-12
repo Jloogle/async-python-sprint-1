@@ -15,8 +15,8 @@ def forecast_weather():
     process_producer = DataCalculationTask(queue, future_res)
     process_producer.start()
     process_producer.join()
-    a = DataAggregationTask(queue)
-    result = a.run()
+    aggregation = DataAggregationTask(queue)
+    result = aggregation.run()
     DataAnalyzingTask(result).run()
 
 
